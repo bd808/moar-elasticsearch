@@ -1,0 +1,7 @@
+.php-version
+build
+composer.lock
+composer.phar
+phpunit.xml
+vendor
+moar-start-project.php
