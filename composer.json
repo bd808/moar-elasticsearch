@@ -17,6 +17,7 @@
   ]
   ,"require": {
     "php": ">=5.3.0"
+    ,"moar/net-http": "dev-master"
   }
   ,"autoload": {
     "psr-0": {"Moar\\Elasticsearch": "src/"}
