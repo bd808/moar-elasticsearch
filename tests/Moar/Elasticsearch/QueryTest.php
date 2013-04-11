@@ -235,28 +235,6 @@ class QueryTest extends \PHPUnit_Framework_TestCase {
     $this->assertFalse($root->hasBar());
   }
 
-  public function test_scan () {
-    if (!getenv('ES_URL')) {
-      $this->markTestSkipped('ES_URL not set in environment.');
-    }
-
-    // TODO: make fixture data set to load into ES
-    $q = new Query(getenv('ES_URL'), 'test');
-    $q->query->match_all();
-    $r = $q->scan(100);
-
-    $this->assertNotNull($r);
-    $this->assertGreaterThan(0, $r->hits->total);
-
-    $expectTotal = $r->hits->total;
-    $got = 0;
-    foreach ($r as $idx => $record) {
-      $this->assertFalse($r->isError(), $idx);
-      $got++;
-    }
-    $this->assertEquals($expectTotal, $got);
-  }
-
   /**
    * Callback to check that the given object is an instance of
    * Query.
