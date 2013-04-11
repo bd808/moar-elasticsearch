@@ -8,12 +8,24 @@ namespace Moar\Elasticsearch;
 use Moar\Net\Http\Request as HttpRequest;
 
 /**
- * ElasticSearch query object.
+ * Fluent ElasticSearch query builder.
  *
  * The json format used by Elastic Search for requests and php's default
  * stdClass object behavior work very nicely together for creation of queries,
  * but there are some boring boilerplate parts that this class can help out
  * with.
+ *
+ * This class (ab)uses the `__get` and `__set` magic functions and
+ * \ArrayAccess::offsetSet() to provide \stdClass like automatic member
+ * creation functionality. A call to get an non-existant member will add a new
+ * Query instance in that member slot and return it via `__get`. `__set`
+ * detects addition of Query members and provides them with information about
+ * the parent object and member name where they have been stored.
+ * `offsetSet()` uses the stored parent and member name data to replace the
+ * current object with a native PHP array in the parent object. When used in
+ * concert, these methods allow chained syntax for manipulating deeply nested
+ * object structures common in ElasticSearch query language while
+ * simultaneously providing convenience functions at any depth.
  *
  * @package Moar\Elasticsearch
  * @copyright 2013 Bryan Davis and contributors. All Rights Reserved.
@@ -45,19 +57,89 @@ class Query implements \ArrayAccess {
   protected $_slot;
 
   /**
+   * Server to contact.
+   * @var string
+   */
+  protected $_server;
+
+  /**
+   * Index to query.
+   * @var string
+   */
+  protected $_index;
+
+  /**
+   * Document type to query.
+   * @var string
+   */
+  protected $_type;
+
+  /**
+   * Constructor.
+   *
+   * @param string $svr Server URL (including scheme and port)
+   * @param string $idx Index name(s)
+   * @param string $type Document type
+   * @param array $props Initial properties
+   */
+  public function __construct (
+      $svr = null, $idx = null, $type = null, $props = array()) {
+    if (null !== $svr) {
+      $this->_server = $svr;
+    }
+    if (null !== $idx) {
+      $this->_index = $idx;
+    }
+    if (null !== $type) {
+      $this->_type = $type;
+    }
+
+    foreach ($props as $slot => $value) {
+      $this->{$slot} = $value;
+    }
+  }
+
+  /**
+   * Set server to query.
+   *
+   * @param string $url Server URL (including scheme and port)
+   * @return Query Self, for message chaining
+   */
+  public function server ($url) {
+    $this->_server = $url;
+    return $this;
+  }
+
+  /**
+   * Set index to query.
+   *
+   * @param string $idx Index name(s)
+   * @return Query Self, for message chaining
+   */
+  public function index ($idx) {
+    $this->_index = $idx;
+    return $this;
+  }
+
+  /**
+   * Set document type to query.
+   *
+   * @param string $type Document type
+   * @return Query Self, for message chaining
+   */
+  public function type ($type) {
+    $this->_type = $type;
+    return $this;
+  }
+
+  /**
    * Instance factory.
    *
    * @param array $props Initial properties
    * @return Query New instance
    */
   public static function getInstance ($props = array()) {
-    $es = new Query();
-
-    foreach ($props as $slot => $value) {
-      $es->{$slot} = $value;
-    }
-
-    return $es;
+    return new Query(null, null, null, $props);
   } //end getInstance
 
   /**
@@ -126,24 +208,64 @@ class Query implements \ArrayAccess {
   }
 
   /**
-   * Call ES server with this query.
+   * Execute query.
    *
-   * @param string $url URL of search endpoint to call
-   * @param int $timeout Request timeout in milliseconds
    * @param array  $opts Curl configuration options
-   * @return Response Response
+   * @return Response ElasticSearch response
    */
-  public function search ($url, $timeout = 60000, $opts = null) {
-    $req = new HttpRequest($url, 'POST');
+  public function search ($opts = null) {
+    $req = new HttpRequest($this->_buildUrl('_search'), 'GET');
     $req->setHeaders(array('Content-type: application/json'));
     $req->setPostBody($this->json());
-    $req->setTimeout($timeout);
     $req->setCurlOptions($opts);
     $resp = $req->submit(false);
-
     return new Response(
         $resp->getResponseBody(), $resp->getResponseHttpCode());
   }
+
+  /**
+   * Execute scan query.
+   *
+   * @param int $fetch Number of records to fetch per request
+   * @param string $keepAlive Duration to keep cursor alive between requests
+   * @param array  $opts Curl configuration options
+   * @return Response ElasticSearch response
+   */
+  public function scan (
+      $fetch = 50, $keepAlive = '1m', $opts = null) {
+    $req = new HttpRequest($this->_buildUrl('_search'), 'GET');
+    $req->addQueryData(array(
+        'search_type' => 'scan',
+        'scroll' => $keepAlive,
+        'size' => $fetch,
+      ));
+    $req->setHeaders(array('Content-type: application/json'));
+    $req->setPostBody($this->json());
+    $req->setCurlOptions($opts);
+    $resp = $req->submit(false);
+    return new Response(
+        $resp->getResponseBody(), $resp->getResponseHttpCode(),
+        $this->_server, $keepAlive);
+  } //end scan
+
+  /**
+   * Build the URL for a given action.
+   *
+   * @param string $action ElasticSearch action
+   */
+  protected function _buildUrl ($action) {
+    $parts = array();
+    $parts[] = $this->_server;
+    if (isset($this->_index)) {
+      $parts[] = urlencode($this->_index);
+
+      if (isset($this->_type)) {
+        $parts[] = urlencode($this->_type);
+      }
+    }
+    $parts[] = urlencode($action);
+    return implode('/', $parts);
+  } //end _buildUrl
 
   /**
    * Add sort criteria to this node.
@@ -260,7 +382,7 @@ class Query implements \ArrayAccess {
    */
   public function rangeFilter (
       $field, $from, $to, $includeLower = true, $includeUpper = true) {
-    $this->range->{$field}->range($from, $to, $includeLower, $includeUpper);
+    $this->range->{$field}->_range($from, $to, $includeLower, $includeUpper);
     return $this;
   } //end rangeFilter
 
@@ -276,7 +398,7 @@ class Query implements \ArrayAccess {
     $rangeList = array();
     foreach ($ranges as $range) {
       $r = new Query();
-      $rangeList[] = call_user_func_array(array($r, 'range'), $range);
+      $rangeList[] = call_user_func_array(array($r, '_range'), $range);
     }
     if (!empty($rangeList)) {
       $this->facets->{$name}->range->{$field} = $rangeList;
@@ -356,19 +478,19 @@ class Query implements \ArrayAccess {
    * @param bool $includeUpper Should upper bound be inclusive? (<=)
    * @return Query Self, for message chaining
    */
-  protected function range (
+  protected function _range (
       $from, $to, $includeLower = true, $includeUpper = true) {
     if (null !== $from && '' !== $from) {
-      $this->from = static::cast($from);
+      $this->from = static::_cast($from);
     }
     if (null !== $to && '' !== $to) {
-      $this->to = static::cast($to);
+      $this->to = static::_cast($to);
     }
     $this->include_lower = $includeLower;
     $this->include_upper = $includeUpper;
 
     return $this;
-  } //end range
+  } //end _range
 
   /**
    * Cast a value for inclusion in a query.
@@ -376,7 +498,7 @@ class Query implements \ArrayAccess {
    * @param mixed $val Value to cast
    * @return mixed Cast value
    */
-  protected static function cast ($val) {
+  protected static function _cast ($val) {
     if ($val instanceof \DateTime) {
       $val = $val->format('c');
     }
@@ -393,7 +515,7 @@ class Query implements \ArrayAccess {
    * @return Query Self, for message chaining
    * @throws \BadMethodCallException If proxy lookup fails
    */
-  protected function listAppend ($list, $method, $args) {
+  protected function _listAppend ($list, $method, $args) {
     if (!method_exists($this, $method)) {
       throw new \BadMethodCallException(
           "Method Query::{$method} does not exist.");
@@ -407,7 +529,7 @@ class Query implements \ArrayAccess {
     $child = new Query();
     $this->{$list}[] = call_user_func_array(array($child, $method), $args);
     return $this;
-  } //end listAppend
+  } //end _listAppend
 
   /**
    * Abuse the magic helper for reading inaccessible properties.
@@ -451,7 +573,7 @@ class Query implements \ArrayAccess {
    * List prefixes that will trigger `__call` magic handling.
    * @var array
    */
-  protected static $listNames = array('and', 'or');
+  protected static $_listNames = array('and', 'or');
 
   /**
    * Attempt to resolve undefined method calls as list creation helper
@@ -464,9 +586,9 @@ class Query implements \ArrayAccess {
    */
   public function __call ($name, $args) {
     // is the call a list append operation?
-    foreach (static::$listNames as $list) {
+    foreach (static::$_listNames as $list) {
       if (0 === mb_stripos($name, $list)) {
-        return $this->listAppend(
+        return $this->_listAppend(
             $list, mb_substr($name, mb_strlen($list)), $args);
       }
     }

@@ -5,6 +5,8 @@
 
 namespace Moar\Elasticsearch;
 
+use Moar\Net\Http\Request as HttpRequest;
+
 /**
  * Elastic Search response wrapper.
  *
@@ -32,16 +34,52 @@ class Response implements \Iterator, \Countable {
   protected $ptr;
 
   /**
+   * Offset in scrolling result set.
+   * @var int
+   */
+  protected $offset = 0;
+
+  /**
+   * Url for scroll requests.
+   * @var string
+   */
+  protected $scrollUrl;
+
+  /**
+   * Keep alive time for scroll requests.
+   * @var string
+   */
+  protected $keepAlive;
+
+  /**
    * Constructor.
    *
    * @param string|object $body ES response body
    * @param int $status HTTP response status code
+   * @param string $url ElasticSearch server URL for scroll requests
+   * @param string $keepAlive Duration to keep cursor alive between requests
    */
-  public function __construct ($body, $status = 200) {
-    // check for http error response
-    if ($status < 200 || $status > 299) {
-      $this->isError = true;
+  public function __construct (
+      $body, $status = 200, $url = null, $keepAlive = null) {
+    $this->processResponse($body, $status);
+
+    if (isset($this->_scroll_id) && null !== $url) {
+      $this->scrollUrl = "{$url}/_search/scroll";
+      $this->keepAlive = $keepAlive;
     }
+  } //end __construct
+
+  /**
+   * Process an HTTP response.
+   *
+   * @param string|object $body ES response body
+   * @param int $status HTTP response status code
+   */
+  protected function processResponse ($body, $status) {
+    unset($this->_scroll_id);
+
+    // check for http error response
+    $this->isError = ($status < 200 || $status > 299);
 
     if (is_string($body)) {
       // decode payload
@@ -65,8 +103,7 @@ class Response implements \Iterator, \Countable {
     // pick out results from response (fake if necessary)
     $this->results = (isset($this->hits->hits))? $this->hits->hits: array();
     $this->rewind();
-  } //end __construct
-
+  } //end processResponse
 
   /**
    * Is this an error response?
@@ -76,7 +113,6 @@ class Response implements \Iterator, \Countable {
   public function isError () {
     return $this->isError;
   }
-
 
   /**
    * Get the collection of results from the request.
@@ -141,7 +177,7 @@ class Response implements \Iterator, \Countable {
    * @return int Key
    */
   public function key () {
-    return $this->ptr;
+    return $this->ptr + $this->offset;
   }
 
   /**
@@ -165,7 +201,38 @@ class Response implements \Iterator, \Countable {
    * @return bool True if pointing to valid member, false otherwise
    */
   public function valid () {
-    return isset($this->results[$this->ptr]);
+    $val = isset($this->results[$this->ptr]);
+    if (!$val && isset($this->_scroll_id)) {
+      $this->scroll();
+      $val = isset($this->results[$this->ptr]) && !$this->isError();
+    }
+    return $val;
   }
+
+  /**
+   * Scroll to the next chunk of response data.
+   *
+   * This will be called automatically under iteration (eg foreach) when the
+   * current results are exhausted if _scroll_id is present.
+   *
+   * @return void
+   */
+  public function scroll () {
+    if (!isset($this->_scroll_id)) {
+      throw new \DomainException('Not a scrollable response.');
+    }
+
+    // keep track of our offset in the larger result set
+    $this->offset = count($this->results) - 1;
+
+    $req = new HttpRequest($this->scrollUrl, 'GET');
+    $req->addQueryData(array(
+        'scroll' => $this->keepAlive,
+      ));
+    $req->setPostBody($this->_scroll_id);
+    $resp = $req->submit(false);
+    $this->processResponse(
+        $resp->getResponseBody(), $resp->getResponseHttpCode());
+  } //end scroll
 
 } //end Response

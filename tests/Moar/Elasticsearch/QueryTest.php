@@ -179,12 +179,12 @@ class QueryTest extends \PHPUnit_Framework_TestCase {
 
   public function test_rangefacet () {
     $root = Query::getInstance();
-    $root->rangeFacet('score', 'kount_score', array(
+    $root->rangeFacet('score', 'score', array(
         array(0, 9),
         array(10, 19),
       ));
 
-    $this->assertEquals('{"facets":{"score":{"range":{"kount_score":[{"from":0,"to":9,"include_lower":true,"include_upper":true},{"from":10,"to":19,"include_lower":true,"include_upper":true}]}}}}',
+    $this->assertEquals('{"facets":{"score":{"range":{"score":[{"from":0,"to":9,"include_lower":true,"include_upper":true},{"from":10,"to":19,"include_lower":true,"include_upper":true}]}}}}',
         $root->json());
   }
 
@@ -233,6 +233,28 @@ class QueryTest extends \PHPUnit_Framework_TestCase {
 
     $this->assertTrue($root->hasFoo());
     $this->assertFalse($root->hasBar());
+  }
+
+  public function test_scan () {
+    if (!getenv('ES_URL')) {
+      $this->markTestSkipped('ES_URL not set in environment.');
+    }
+
+    // TODO: make fixture data set to load into ES
+    $q = new Query(getenv('ES_URL'), 'test');
+    $q->query->match_all();
+    $r = $q->scan(100);
+
+    $this->assertNotNull($r);
+    $this->assertGreaterThan(0, $r->hits->total);
+
+    $expectTotal = $r->hits->total;
+    $got = 0;
+    foreach ($r as $idx => $record) {
+      $this->assertFalse($r->isError(), $idx);
+      $got++;
+    }
+    $this->assertEquals($expectTotal, $got);
   }
 
   /**
