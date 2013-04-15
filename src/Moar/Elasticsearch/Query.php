@@ -5,8 +5,6 @@
 
 namespace Moar\Elasticsearch;
 
-use Moar\Net\Http\Request as HttpRequest;
-
 /**
  * Fluent ElasticSearch query builder.
  *
@@ -206,66 +204,6 @@ class Query implements \ArrayAccess {
   public function json () {
     return json_encode($this);
   }
-
-  /**
-   * Execute query.
-   *
-   * @param array  $opts Curl configuration options
-   * @return Response ElasticSearch response
-   */
-  public function search ($opts = null) {
-    $req = new HttpRequest($this->_buildUrl('_search'), 'GET');
-    $req->setHeaders(array('Content-type: application/json'));
-    $req->setPostBody($this->json());
-    $req->setCurlOptions($opts);
-    $resp = $req->submit(false);
-    return new Response(
-        $resp->getResponseBody(), $resp->getResponseHttpCode());
-  }
-
-  /**
-   * Execute scan query.
-   *
-   * @param int $fetch Number of records to fetch per request
-   * @param string $keepAlive Duration to keep cursor alive between requests
-   * @param array  $opts Curl configuration options
-   * @return Response ElasticSearch response
-   */
-  public function scan (
-      $fetch = 50, $keepAlive = '1m', $opts = null) {
-    $req = new HttpRequest($this->_buildUrl('_search'), 'GET');
-    $req->addQueryData(array(
-        'search_type' => 'scan',
-        'scroll' => $keepAlive,
-        'size' => $fetch,
-      ));
-    $req->setHeaders(array('Content-type: application/json'));
-    $req->setPostBody($this->json());
-    $req->setCurlOptions($opts);
-    $resp = $req->submit(false);
-    return new Response(
-        $resp->getResponseBody(), $resp->getResponseHttpCode(),
-        $this->_server, $keepAlive);
-  } //end scan
-
-  /**
-   * Build the URL for a given action.
-   *
-   * @param string $action ElasticSearch action
-   */
-  protected function _buildUrl ($action) {
-    $parts = array();
-    $parts[] = $this->_server;
-    if (isset($this->_index)) {
-      $parts[] = urlencode($this->_index);
-
-      if (isset($this->_type)) {
-        $parts[] = urlencode($this->_type);
-      }
-    }
-    $parts[] = urlencode($action);
-    return implode('/', $parts);
-  } //end _buildUrl
 
   /**
    * Add sort criteria to this node.
