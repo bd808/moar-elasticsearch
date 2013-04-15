@@ -101,6 +101,11 @@ class Client {
     return $this;
   }
 
+  /**
+   * Get the currently configured server.
+   *
+   * @return string Server
+   */
   public function server () {
     return $this->server;
   }
@@ -119,6 +124,11 @@ class Client {
     return $this;
   }
 
+  /**
+   * Get the currently configured index.
+   *
+   * @return string Index
+   */
   public function index () {
     return $this->index;
   }
@@ -137,12 +147,17 @@ class Client {
     return $this;
   }
 
+  /**
+   * Get the currently configured type.
+   *
+   * @return string Type
+   */
   public function type () {
     return $this->type;
   }
 
   /**
-   * Execute query.
+   * Execute a search.
    *
    * @param string|object $json Json query
    * @param array  $opts Curl configuration options
@@ -163,7 +178,7 @@ class Client {
   }
 
   /**
-   * Execute scan query.
+   * Execute a scan query.
    *
    * @param string|object $json Json query
    * @param int $fetch Number of records to fetch per request
