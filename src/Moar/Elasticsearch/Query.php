@@ -54,80 +54,16 @@ class Query implements \ArrayAccess {
    */
   protected $_slot;
 
-  /**
-   * Server to contact.
-   * @var string
-   */
-  protected $_server;
-
-  /**
-   * Index to query.
-   * @var string
-   */
-  protected $_index;
-
-  /**
-   * Document type to query.
-   * @var string
-   */
-  protected $_type;
 
   /**
    * Constructor.
    *
-   * @param string $svr Server URL (including scheme and port)
-   * @param string $idx Index name(s)
-   * @param string $type Document type
    * @param array $props Initial properties
    */
-  public function __construct (
-      $svr = null, $idx = null, $type = null, $props = array()) {
-    if (null !== $svr) {
-      $this->_server = $svr;
-    }
-    if (null !== $idx) {
-      $this->_index = $idx;
-    }
-    if (null !== $type) {
-      $this->_type = $type;
-    }
-
+  public function __construct ($props = array()) {
     foreach ($props as $slot => $value) {
       $this->{$slot} = $value;
     }
-  }
-
-  /**
-   * Set server to query.
-   *
-   * @param string $url Server URL (including scheme and port)
-   * @return Query Self, for message chaining
-   */
-  public function server ($url) {
-    $this->_server = $url;
-    return $this;
-  }
-
-  /**
-   * Set index to query.
-   *
-   * @param string $idx Index name(s)
-   * @return Query Self, for message chaining
-   */
-  public function index ($idx) {
-    $this->_index = $idx;
-    return $this;
-  }
-
-  /**
-   * Set document type to query.
-   *
-   * @param string $type Document type
-   * @return Query Self, for message chaining
-   */
-  public function type ($type) {
-    $this->_type = $type;
-    return $this;
   }
 
   /**
@@ -136,9 +72,9 @@ class Query implements \ArrayAccess {
    * @param array $props Initial properties
    * @return Query New instance
    */
-  public static function getInstance ($props = array()) {
-    return new Query(null, null, null, $props);
-  } //end getInstance
+  public static function newInstance ($props = array()) {
+    return new Query($props);
+  } //end newInstance
 
   /**
    * Create a node with non-empty search parameters AND'd
@@ -554,6 +490,31 @@ class Query implements \ArrayAccess {
     throw new \BadMethodCallException(
           "Method Query::{$name} does not exist.");
   } //end __call
+
+
+  /**
+   * Attempt to resolve undefined static methods by creating a new Query
+   * instance and delegating the call to that instance.
+   *
+   * @param string $name Method name
+   * @param array $args Call arguments
+   * @return Query New instance
+   * @throws \BadMethodCallException If proxy lookup fails
+   */
+  public static function __callStatic ($name, $args) {
+
+    if (0 === mb_stripos($name, 'new')) {
+      $name = mb_substr($name, 3);
+      $name = mb_strtolower(mb_substr($name, 0, 1)) .  mb_substr($name, 1);
+      $q = self::newInstance();
+      \call_user_func_array(array($q, $name), $args);
+      return $q;
+    }
+
+    // fall through to an error
+    throw new \BadMethodCallException(
+          "Method Query::{$name} does not exist.");
+  }
 
   /**
    * Abuse the ArrayAccess::offsetSet method to replace ourself in our parent
