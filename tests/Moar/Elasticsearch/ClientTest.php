@@ -67,7 +67,7 @@ class ClientTest extends \PHPUnit_Framework_TestCase {
 
     $c = Client::connection($this->envUrl);
     // TODO: make fixture data set to load into ES
-    $r = $c->scan(Query::getInstance()->query->match_all(), 100);
+    $r = $c->scan(Query::newInstance()->query->match_all(), 100);
 
     $this->assertNotNull($r);
     $this->assertGreaterThan(0, $r->hits->total);
