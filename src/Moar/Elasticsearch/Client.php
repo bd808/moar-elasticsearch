@@ -15,10 +15,14 @@ use Moar\Net\Http\Request as HttpRequest;
  */
 class Client {
 
+  /**
+   * Default server URL.
+   * @var string
+   */
   const DEFAULT_SERVER = 'http://localhost:9200';
 
   /**
-   * Server to contact.
+   * Server URL.
    * @var string
    */
   protected $server = self::DEFAULT_SERVER;
@@ -34,6 +38,24 @@ class Client {
    * @var string
    */
   protected $type;
+
+  /**
+   * User for HTTP basic auth.
+   * @var string
+   */
+  protected $user;
+
+  /**
+   * Password for HTTP auth.
+   * @var string
+   */
+  protected $password;
+
+  /**
+   * cURL auth type.
+   * @var int
+   */
+  protected $authType = CURLAUTH_BASIC;
 
   /**
    * Constructor.
@@ -68,10 +90,17 @@ class Client {
       $url = getenv('ELASTICSEARCH_URL');
     }
 
-    $server = null;
-    $index = null;
-    $type = null;
+    $conn = new self();
+    return $conn->setFromUrl($url);
+  } //end connection
 
+  /**
+   * Set server, index, type, user and password from a URL.
+   *
+   * @param string $url Server URL
+   * @return Client Self, for message chaining
+   */
+  public function setFromUrl ($url) {
     $parts = parse_url($url);
     if (isset($parts['host'])) {
       $server = (isset($parts['scheme']))? $parts['scheme']: 'http';
@@ -79,16 +108,29 @@ class Client {
       if (isset($parts['port'])) {
         $server .= ":{$parts['port']}";
       }
+      $this->setServer($server);
     }
 
     if (isset($parts['path']) && !empty($parts['path'])) {
+      // use array_filter() to discard empty parts
       $path = array_filter(explode('/', $parts['path']));
-      $index = (empty($path))? null: array_shift($path);
-      $type = (empty($path))? null: array_shift($path);
+      if (!empty($path)) {
+        $this->setIndex(array_shift($path));
+      }
+      if (!empty($path)) {
+        $this->setType(array_shift($path));
+      }
     }
 
-    return new self($server, $index, $type);
-  } //end connection
+    if (isset($parts['user'])) {
+      $this->setUser($parts['user']);
+    }
+    if (isset($parts['pass'])) {
+      $this->setPassword($parts['pass']);
+    }
+
+    return $this;
+  } //end setFromUrl
 
   /**
    * Set server to query.
@@ -157,6 +199,68 @@ class Client {
   }
 
   /**
+   * Set user for HTTP auth.
+   *
+   * @param string $u User
+   * @return Client Self, for message chaining
+   */
+  public function setUser ($u) {
+    $this->user = $u;
+    return $this;
+  }
+
+  /**
+   * Get the currently configured HTTP user.
+   *
+   * @return string User
+   */
+  public function user () {
+    return $this->user;
+  }
+
+  /**
+   * Set password for HTTP auth.
+   *
+   * @param string $p Password
+   * @return Client Self, for message chaining
+   */
+  public function setPassword ($p) {
+    $this->password = $p;
+    return $this;
+  }
+
+  /**
+   * Get the currently configured HTTP password.
+   *
+   * @return string Password
+   */
+  public function password () {
+    return $this->password;
+  }
+
+  /**
+   * Set the HTTP authentication type.
+   *
+   * @param int $t Auth type
+   * @return Client Self, for message chaining
+   * @see \curl_setopt()
+   * @see CURLOPT_HTTPAUTH
+   */
+  public function setAuthType ($t) {
+    $this->authType = $t;
+    return $this;
+  }
+
+  /**
+   * Get the currently configured HTTP authentication type.
+   *
+   * @return int HTTP authentication type
+   */
+  public function authType () {
+    return $this->authType;
+  }
+
+  /**
    * Execute a search.
    *
    * @param string|object $json Json query
@@ -172,10 +276,11 @@ class Client {
     $req->setHeaders(array('Content-type: application/json'));
     $req->setPostBody($json);
     $req->setCurlOptions($opts);
+    $this->addCredentials($req);
     $resp = $req->submit(false);
     return new Response(
         $resp->getResponseBody(), $resp->getResponseHttpCode());
-  }
+  } //end search
 
   /**
    * Execute a scan query.
@@ -200,11 +305,44 @@ class Client {
     $req->setHeaders(array('Content-type: application/json'));
     $req->setPostBody($json);
     $req->setCurlOptions($opts);
+    $this->addCredentials($req);
     $resp = $req->submit(false);
     return new Response(
         $resp->getResponseBody(), $resp->getResponseHttpCode(),
         $this->server, $keepAlive);
   } //end scan
+
+  /**
+   * Submit a bulk instruction set to cluster.
+   *
+   * Each "operation" in the array is expected to be:
+   * - an "action_and_meta_data" json string
+   * - an "optional_source" json string
+   * - an "action_and_meta_data"\n"optional_source" pair
+   *
+   * Array input will be flattened into a string by `implode("\n", ...)`.
+   *
+   * @param array|string $data Bulk operations list
+   * @param array  $opts Curl configuration options
+   * @return Response ElasticSearch response
+   * @see http://www.elasticsearch.org/guide/reference/api/bulk/
+   */
+  public function bulk ($data, $opts = null) {
+    if (is_array($data)) {
+      $payload = implode("\n", $data) . "\n";
+    } else {
+      $payload = (string) $data;
+    }
+
+    $req = new HttpRequest($this->buildUrl('_bulk'), 'PUT');
+    $req->setHeaders(array('Content-type: application/json'));
+    $req->setPostBody($payload);
+    $req->setCurlOptions($opts);
+    $this->addCredentials($req);
+    $resp = $req->submit(false);
+    return new Response(
+        $resp->getResponseBody(), $resp->getResponseHttpCode());
+  } //end bulk
 
   /**
    * Build the URL for a given action.
@@ -224,5 +362,17 @@ class Client {
     $parts[] = urlencode($action);
     return implode('/', $parts);
   } //end buildUrl
+
+  /**
+   * Add authentication credentials to a Moar\Net\Http\Request.
+   *
+   * @param Moar\Net\Http\Request $req Request to alter
+   * @return void
+   */
+  protected function addCredentials ($req) {
+    if (null !== $this->user) {
+      $req->setCredentials($this->user, $this->password, $this->authType);
+    }
+  } //end addCredentials
 
 } //end Client
