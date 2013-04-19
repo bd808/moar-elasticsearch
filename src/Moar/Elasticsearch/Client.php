@@ -344,6 +344,10 @@ class Client {
         $resp->getResponseBody(), $resp->getResponseHttpCode());
   } //end bulk
 
+  public function __toString () {
+    return "<" . __NAMESPACE__ . "\\Client url={$this->buildUrl('')} >";
+  }
+
   /**
    * Build the URL for a given action.
    *
