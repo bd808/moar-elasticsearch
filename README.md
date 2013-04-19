@@ -15,7 +15,7 @@ via [Composer][].
 
     {
       "require": {
-        "moar/metrics": "dev-master"
+        "moar/elasticsearch": "dev-master"
       }
     }
 
