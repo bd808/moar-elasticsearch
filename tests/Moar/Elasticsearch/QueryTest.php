@@ -79,7 +79,7 @@ class QueryTest extends \PHPUnit_Framework_TestCase {
 
   /**
    * Given a dict of property names and values
-   * When the getInstance() factory is called
+   * When the newInstance() factory is called
    * Then a new Query is created
    * And the properties are set.
    */
@@ -89,7 +89,7 @@ class QueryTest extends \PHPUnit_Framework_TestCase {
         'size' => 20,
         'fields' => array('_source'),
       );
-    $root = Query::getInstance($init);
+    $root = Query::newInstance($init);
 
     foreach ($init as $slot => $val) {
       $this->assertObjectHasAttribute($slot, $root);
@@ -142,7 +142,7 @@ class QueryTest extends \PHPUnit_Framework_TestCase {
 
 
   public function test_sort () {
-    $root = Query::getInstance();
+    $root = Query::newInstance();
     $root->sort("date_entered");
 
     $this->assertEquals('{"sort":[{"date_entered":{"order":"asc"}}]}',
@@ -164,21 +164,21 @@ class QueryTest extends \PHPUnit_Framework_TestCase {
   }
 
   public function test_missingfilter () {
-    $root = Query::getInstance();
+    $root = Query::newInstance();
     $root->missingFilter('xyzzy');
 
     $this->assertEquals('{"missing":{"field":"xyzzy"}}', $root->json());
   }
 
   public function test_rangeFilter () {
-    $root = Query::getInstance();
+    $root = Query::newInstance();
     $root->rangeFilter('xyzzy', 1, 10);
 
     $this->assertEquals('{"range":{"xyzzy":{"from":1,"to":10,"include_lower":true,"include_upper":true}}}', $root->json());
   }
 
   public function test_rangefacet () {
-    $root = Query::getInstance();
+    $root = Query::newInstance();
     $root->rangeFacet('score', 'score', array(
         array(0, 9),
         array(10, 19),
@@ -189,7 +189,7 @@ class QueryTest extends \PHPUnit_Framework_TestCase {
   }
 
   public function test_termsfacet () {
-    $root = Query::getInstance();
+    $root = Query::newInstance();
     $root->termsFacet('status', 'status');
     $root->termsFacet('site', 'site_id', 10);
 
@@ -198,14 +198,14 @@ class QueryTest extends \PHPUnit_Framework_TestCase {
   }
 
   public function test_datehistogramfacet () {
-    $root = Query::getInstance();
+    $root = Query::newInstance();
     $root->dateHistogramFacet('date', 'transaction_date', 'hour');
 
     $this->assertEquals('{"facets":{"date":{"date_histogram":{"field":"transaction_date","interval":"hour"}}}}', $root->json());
   }
 
   public function test_statsfacet () {
-    $root = Query::getInstance();
+    $root = Query::newInstance();
     $root->statsFacet('foo', 'xyzzy');
 
     $this->assertEquals('{"facets":{"foo":{"statistical":{"field":"xyzzy"}}}}',
@@ -213,14 +213,14 @@ class QueryTest extends \PHPUnit_Framework_TestCase {
   }
 
   public function test_call_and_listappend () {
-    $root = Query::getInstance();
+    $root = Query::newInstance();
     $root->andTermFilter('merchant_id', '999999');
 
     $this->assertEquals('{"and":[{"term":{"merchant_id":"999999"}}]}', $root->json());
   }
 
   public function test_call_and_setter () {
-    $root = Query::getInstance();
+    $root = Query::newInstance();
     $root->foo('bar');
     $root->baz();
 
@@ -228,33 +228,11 @@ class QueryTest extends \PHPUnit_Framework_TestCase {
   }
 
   public function test_call_and_has () {
-    $root = Query::getInstance();
+    $root = Query::newInstance();
     $root->foo = 1;
 
     $this->assertTrue($root->hasFoo());
     $this->assertFalse($root->hasBar());
-  }
-
-  public function test_scan () {
-    if (!getenv('ES_URL')) {
-      $this->markTestSkipped('ES_URL not set in environment.');
-    }
-
-    // TODO: make fixture data set to load into ES
-    $q = new Query(getenv('ES_URL'), 'test');
-    $q->query->match_all();
-    $r = $q->scan(100);
-
-    $this->assertNotNull($r);
-    $this->assertGreaterThan(0, $r->hits->total);
-
-    $expectTotal = $r->hits->total;
-    $got = 0;
-    foreach ($r as $idx => $record) {
-      $this->assertFalse($r->isError(), $idx);
-      $got++;
-    }
-    $this->assertEquals($expectTotal, $got);
   }
 
   /**

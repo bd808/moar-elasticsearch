@@ -101,6 +101,17 @@ class Response implements \Iterator, \Countable {
     }
 
     // pick out results from response (fake if necessary)
+    // look for search hits first
+    if (isset($this->hits->hits)) {
+      $this->results = $this->hits->hits;
+
+    } else if (isset($this->items)) {
+      // _bulk operations return a list of items
+      $this->results = $this->items;
+
+    } else {
+      $this->results = array();
+    }
     $this->results = (isset($this->hits->hits))? $this->hits->hits: array();
     $this->rewind();
   } //end processResponse

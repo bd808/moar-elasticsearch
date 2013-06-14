@@ -5,8 +5,6 @@
 
 namespace Moar\Elasticsearch;
 
-use Moar\Net\Http\Request as HttpRequest;
-
 /**
  * Fluent ElasticSearch query builder.
  *
@@ -56,80 +54,16 @@ class Query implements \ArrayAccess {
    */
   protected $_slot;
 
-  /**
-   * Server to contact.
-   * @var string
-   */
-  protected $_server;
-
-  /**
-   * Index to query.
-   * @var string
-   */
-  protected $_index;
-
-  /**
-   * Document type to query.
-   * @var string
-   */
-  protected $_type;
 
   /**
    * Constructor.
    *
-   * @param string $svr Server URL (including scheme and port)
-   * @param string $idx Index name(s)
-   * @param string $type Document type
    * @param array $props Initial properties
    */
-  public function __construct (
-      $svr = null, $idx = null, $type = null, $props = array()) {
-    if (null !== $svr) {
-      $this->_server = $svr;
-    }
-    if (null !== $idx) {
-      $this->_index = $idx;
-    }
-    if (null !== $type) {
-      $this->_type = $type;
-    }
-
+  public function __construct ($props = array()) {
     foreach ($props as $slot => $value) {
       $this->{$slot} = $value;
     }
-  }
-
-  /**
-   * Set server to query.
-   *
-   * @param string $url Server URL (including scheme and port)
-   * @return Query Self, for message chaining
-   */
-  public function server ($url) {
-    $this->_server = $url;
-    return $this;
-  }
-
-  /**
-   * Set index to query.
-   *
-   * @param string $idx Index name(s)
-   * @return Query Self, for message chaining
-   */
-  public function index ($idx) {
-    $this->_index = $idx;
-    return $this;
-  }
-
-  /**
-   * Set document type to query.
-   *
-   * @param string $type Document type
-   * @return Query Self, for message chaining
-   */
-  public function type ($type) {
-    $this->_type = $type;
-    return $this;
   }
 
   /**
@@ -138,9 +72,9 @@ class Query implements \ArrayAccess {
    * @param array $props Initial properties
    * @return Query New instance
    */
-  public static function getInstance ($props = array()) {
-    return new Query(null, null, null, $props);
-  } //end getInstance
+  public static function newInstance ($props = array()) {
+    return new Query($props);
+  } //end newInstance
 
   /**
    * Create a node with non-empty search parameters AND'd
@@ -206,66 +140,6 @@ class Query implements \ArrayAccess {
   public function json () {
     return json_encode($this);
   }
-
-  /**
-   * Execute query.
-   *
-   * @param array  $opts Curl configuration options
-   * @return Response ElasticSearch response
-   */
-  public function search ($opts = null) {
-    $req = new HttpRequest($this->_buildUrl('_search'), 'GET');
-    $req->setHeaders(array('Content-type: application/json'));
-    $req->setPostBody($this->json());
-    $req->setCurlOptions($opts);
-    $resp = $req->submit(false);
-    return new Response(
-        $resp->getResponseBody(), $resp->getResponseHttpCode());
-  }
-
-  /**
-   * Execute scan query.
-   *
-   * @param int $fetch Number of records to fetch per request
-   * @param string $keepAlive Duration to keep cursor alive between requests
-   * @param array  $opts Curl configuration options
-   * @return Response ElasticSearch response
-   */
-  public function scan (
-      $fetch = 50, $keepAlive = '1m', $opts = null) {
-    $req = new HttpRequest($this->_buildUrl('_search'), 'GET');
-    $req->addQueryData(array(
-        'search_type' => 'scan',
-        'scroll' => $keepAlive,
-        'size' => $fetch,
-      ));
-    $req->setHeaders(array('Content-type: application/json'));
-    $req->setPostBody($this->json());
-    $req->setCurlOptions($opts);
-    $resp = $req->submit(false);
-    return new Response(
-        $resp->getResponseBody(), $resp->getResponseHttpCode(),
-        $this->_server, $keepAlive);
-  } //end scan
-
-  /**
-   * Build the URL for a given action.
-   *
-   * @param string $action ElasticSearch action
-   */
-  protected function _buildUrl ($action) {
-    $parts = array();
-    $parts[] = $this->_server;
-    if (isset($this->_index)) {
-      $parts[] = urlencode($this->_index);
-
-      if (isset($this->_type)) {
-        $parts[] = urlencode($this->_type);
-      }
-    }
-    $parts[] = urlencode($action);
-    return implode('/', $parts);
-  } //end _buildUrl
 
   /**
    * Add sort criteria to this node.
@@ -616,6 +490,31 @@ class Query implements \ArrayAccess {
     throw new \BadMethodCallException(
           "Method Query::{$name} does not exist.");
   } //end __call
+
+
+  /**
+   * Attempt to resolve undefined static methods by creating a new Query
+   * instance and delegating the call to that instance.
+   *
+   * @param string $name Method name
+   * @param array $args Call arguments
+   * @return Query New instance
+   * @throws \BadMethodCallException If proxy lookup fails
+   */
+  public static function __callStatic ($name, $args) {
+
+    if (0 === mb_stripos($name, 'new')) {
+      $name = mb_substr($name, 3);
+      $name = mb_strtolower(mb_substr($name, 0, 1)) .  mb_substr($name, 1);
+      $q = self::newInstance();
+      \call_user_func_array(array($q, $name), $args);
+      return $q;
+    }
+
+    // fall through to an error
+    throw new \BadMethodCallException(
+          "Method Query::{$name} does not exist.");
+  }
 
   /**
    * Abuse the ArrayAccess::offsetSet method to replace ourself in our parent
